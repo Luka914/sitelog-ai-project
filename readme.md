@@ -2,7 +2,7 @@
 
 **Turning forgotten paper safety checklists and dead PDFs into prioritized, verified repair tickets in 10 seconds.**
 
-Built for **DurHack 2026 & The Accenture Challenge**.
+Built for **DurHack 2026 and The Accenture Challenge**.
 
 <img width="1280" height="580" alt="image" src="https://github.com/user-attachments/assets/c83586f2-2352-433a-ad99-4a91e2fe180a" />
 
