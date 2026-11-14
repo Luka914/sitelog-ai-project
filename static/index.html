@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SiteLog AI — Paper Checklist to Action</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6">
+  <div class="max-w-5xl mx-auto space-y-6">
+
+    <!-- Header + Live Metrics Banner -->
+    <div class="flex flex-wrap justify-between items-center bg-slate-900 border border-slate-800 p-5 rounded-xl">
+      <div>
+        <h1 class="text-2xl font-bold text-emerald-400">SiteLog AI</h1>
+        <p class="text-slate-400 text-sm">Paper safety checklists &rarr; verified repair tickets in 10 seconds</p>
+      </div>
+      <div class="flex gap-6 text-right">
+        <div>
+          <div class="text-xs text-slate-400 uppercase">Manual Triage Time</div>
+          <div class="text-lg font-bold text-white">15 mins &rarr; <span class="text-emerald-400">10 secs</span></div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-400 uppercase">Open Tickets</div>
+          <div id="open-count" class="text-lg font-bold text-amber-400">0</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-400 uppercase">Fixed</div>
+          <div id="fixed-count" class="text-lg font-bold text-emerald-400">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs: Switch between Scanner & Live Database Viewer -->
+    <div class="flex gap-2 border-b border-slate-800 pb-3">
+      <button id="tab-scanner" onclick="switchTab('scanner')"
+        class="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white cursor-pointer">
+        Scanner &amp; Tickets
+      </button>
+      <button id="tab-db" onclick="switchTab('db')"
+        class="px-4 py-2 rounded-lg text-sm font-bold bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 cursor-pointer">
+        Database Viewer (sitelog.db)
+      </button>
+    </div>
+
+    <!-- ==================== VIEW 1: SCANNER & TICKETS ==================== -->
+    <div id="view-scanner" class="space-y-6">
+
+      <!-- Capture Zone -->
+      <div class="grid md:grid-cols-2 gap-4 bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <div class="space-y-3">
+          <h2 class="font-semibold text-lg">1. Scan Paper Checklist</h2>
+          <p class="text-sm text-slate-400">Upload a photo or hold a handwritten checklist up to your webcam.</p>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <input id="file-input" type="file" accept="image/*"
+              class="block flex-1 text-sm text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-800 file:text-white hover:file:bg-slate-700 cursor-pointer" />
+            <button id="upload-btn" onclick="uploadSelectedFile()"
+              class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg text-sm font-bold text-white cursor-pointer">
+              Upload &amp; Analyze
+            </button>
+          </div>
+
+          <div class="flex gap-2 pt-1">
+            <button onclick="startCamera()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-medium cursor-pointer">
+              Open Webcam
+            </button>
+            <button onclick="captureAndScan()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-medium cursor-pointer">
+              Snap &amp; Analyze
+            </button>
+          </div>
+
+          <div id="status-msg" class="text-sm font-medium text-slate-400 pt-1">
+            Ready — select a photo of a checklist with a FAIL or warning note.
+          </div>
+        </div>
+
+        <div class="flex items-center justify-center bg-slate-950 rounded-lg border border-slate-800 overflow-hidden h-52">
+          <video id="webcam" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+          <span id="cam-placeholder" class="text-slate-500 text-sm">Webcam preview appears here</span>
+        </div>
+      </div>
+
+      <!-- Live Tickets Feed -->
+      <div class="space-y-3">
+        <h2 class="font-semibold text-lg">2. Auto-Triaged Maintenance Tickets</h2>
+        <div id="tickets-list" class="space-y-4"></div>
+      </div>
+    </div>
+
+    <!-- ==================== VIEW 2: DATABASE VIEWER ==================== -->
+    <div id="view-db" class="hidden space-y-6">
+      <div class="flex flex-wrap justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl gap-3">
+        <div>
+          <h2 class="font-bold text-lg text-white">Live SQLite Database (<code class="text-emerald-400">sitelog.db</code>)</h2>
+          <p class="text-xs text-slate-400">Inspect raw stored tickets and the historical equipment log used for repeat-fault detection.</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="loadDatabase()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold cursor-pointer">
+            Refresh Tables
+          </button>
+          <button onclick="resetDemo()" class="px-3 py-2 bg-red-600/80 hover:bg-red-600 rounded-lg text-xs font-bold text-white cursor-pointer">
+            Reset Demo Data
+          </button>
+        </div>
+      </div>
+
+      <!-- Table 1: Inspection History (Why repeat faults trigger CRITICAL) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+          <h3 class="font-bold text-sm text-amber-400">Table 1: <code>inspection_history</code> (Equipment Memory)</h3>
+          <span id="history-row-count" class="text-xs text-slate-400">0 rows</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950 text-slate-400 uppercase">
+              <tr>
+                <th class="p-3">ID</th>
+                <th class="p-3">Asset ID</th>
+                <th class="p-3">Item</th>
+                <th class="p-3">Logged Note</th>
+                <th class="p-3">Date</th>
+              </tr>
+            </thead>
+            <tbody id="db-history-body" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Table 2: Maintenance Tickets -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+          <h3 class="font-bold text-sm text-emerald-400">Table 2: <code>tickets</code> (Generated Work Orders)</h3>
+          <span id="tickets-row-count" class="text-xs text-slate-400">0 rows</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950 text-slate-400 uppercase">
+              <tr>
+                <th class="p-3">ID</th>
+                <th class="p-3">Asset</th>
+                <th class="p-3">Item</th>
+                <th class="p-3">Priority</th>
+                <th class="p-3">Status</th>
+                <th class="p-3">Note</th>
+                <th class="p-3">Escalation Reason</th>
+                <th class="p-3">Time</th>
+              </tr>
+            </thead>
+            <tbody id="db-tickets-body" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const video = document.getElementById("webcam");
+    const statusMsg = document.getElementById("status-msg");
+    const uploadBtn = document.getElementById("upload-btn");
+
+    // Switch between Scanner view and Database Viewer
+    function switchTab(tab) {
+      const isScanner = tab === "scanner";
+      document.getElementById("view-scanner").classList.toggle("hidden", !isScanner);
+      document.getElementById("view-db").classList.toggle("hidden", isScanner);
+
+      document.getElementById("tab-scanner").className = isScanner
+        ? "px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white cursor-pointer"
+        : "px-4 py-2 rounded-lg text-sm font-bold bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 cursor-pointer";
+
+      document.getElementById("tab-db").className = !isScanner
+        ? "px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white cursor-pointer"
+        : "px-4 py-2 rounded-lg text-sm font-bold bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 cursor-pointer";
+
+      if (!isScanner) loadDatabase();
+    }
+
+    function setStatus(text, type = "info") {
+      const colors = { info: "text-amber-400", success: "text-emerald-400", error: "text-red-400" };
+      statusMsg.className = `text-sm font-medium pt-1 ${colors[type] || "text-slate-300"}`;
+      statusMsg.textContent = text;
+    }
+
+    async function uploadSelectedFile() {
+      const fileInput = document.getElementById("file-input");
+      if (!fileInput.files || !fileInput.files[0]) {
+        setStatus("Please choose an image file first.", "error");
+        return;
+      }
+      await sendImage(fileInput.files[0]);
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        video.classList.remove("hidden");
+        document.getElementById("cam-placeholder").classList.add("hidden");
+      } catch (err) {
+        setStatus("Camera error: " + err.message, "error");
+      }
+    }
+
+    async function captureAndScan() {
+      if (!video.srcObject) {
+        setStatus("Click 'Open Webcam' first or choose a file above.", "error");
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      canvas.toBlob(async (blob) => await sendImage(blob), "image/jpeg");
+    }
+
+    async function sendImage(fileOrBlob) {
+      uploadBtn.disabled = true;
+      setStatus("Analyzing handwriting, checking past history, cropping proof...", "info");
+
+      try {
+        const formData = new FormData();
+        formData.append("file", fileOrBlob, "checklist.jpg");
+
+        const res = await fetch("/api/scan", { method: "POST", body: formData });
+        if (!res.ok) {
+          const errText = await res.text();
+          setStatus(`Server error (${res.status}): ${errText}`, "error");
+          return;
+        }
+
+        const data = await res.json();
+        if (data.tickets_created === 0) {
+          setStatus(`Scanned ${data.asset_id} — 0 failed items or warning notes found.`, "info");
+        } else {
+          setStatus(`Done! Scanned ${data.asset_id} — created ${data.tickets_created} ticket(s).`, "success");
+        }
+
+        await loadTickets();
+      } catch (err) {
+        setStatus("Network/JS error: " + err.message, "error");
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    }
+
+    // Step 1: Approve & Dispatch
+    async function approveTicket(id) {
+      await fetch(`/api/tickets/${id}/approve`, { method: "POST" });
+      loadTickets();
+    }
+
+    // Step 2: Mark Dispatched Ticket as Fixed
+    async function fixTicket(id) {
+      await fetch(`/api/tickets/${id}/fix`, { method: "POST" });
+      loadTickets();
+    }
+
+    // Renders the ticket cards and action buttons (Approve -> Mark Fixed -> Fixed)
+    function renderActionButtons(t) {
+      if (t.status === "FIXED") {
+        return `<span class="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold rounded-lg">FIXED &check;</span>`;
+      }
+      if (t.status === "DISPATCHED") {
+        return `
+          <div class="flex flex-col items-end gap-2">
+            <span class="px-2.5 py-1 bg-sky-500/20 text-sky-300 text-[11px] font-bold rounded">DISPATCHED</span>
+            <button onclick="fixTicket(${t.id})" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg cursor-pointer">
+              Mark as Fixed
+            </button>
+          </div>`;
+      }
+      return `
+        <button onclick="approveTicket(${t.id})" class="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg cursor-pointer">
+          ${t.status === "NEEDS_HUMAN_REVIEW" ? "Verify & Dispatch" : "Approve & Dispatch"}
+        </button>`;
+    }
+
+    async function loadTickets() {
+      const res = await fetch("/api/tickets");
+      const tickets = await res.json();
+
+      document.getElementById("open-count").textContent = tickets.filter(t => t.status !== "FIXED").length;
+      document.getElementById("fixed-count").textContent = tickets.filter(t => t.status === "FIXED").length;
+
+      const listEl = document.getElementById("tickets-list");
+      if (tickets.length === 0) {
+        listEl.innerHTML = `
+          <div class="bg-slate-900/50 border border-dashed border-slate-800 p-6 rounded-xl text-center text-sm text-slate-400">
+            No maintenance tickets yet. Upload a checklist containing a <strong>FAIL</strong> item or warning note above.
+          </div>`;
+        return;
+      }
+
+      const badgeColor = {
+        CRITICAL: "bg-red-500/20 text-red-400 border-red-500/40",
+        HIGH: "bg-orange-500/20 text-orange-400 border-orange-500/40",
+        MEDIUM: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
+        LOW: "bg-blue-500/20 text-blue-400 border-blue-500/40",
+      };
+
+      listEl.innerHTML = tickets.map(t => `
+        <div class="bg-slate-900 border ${t.status === 'FIXED' ? 'border-emerald-900/50 opacity-75' : 'border-slate-800'} p-4 rounded-xl flex flex-wrap md:flex-nowrap justify-between gap-4 items-center">
+          <div class="space-y-1 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 text-xs font-bold border rounded ${badgeColor[t.priority] || ''}">${t.priority}</span>
+              <span class="font-bold text-white">${t.asset_id} &mdash; ${t.item_name}</span>
+              <span class="text-xs text-slate-400">(${t.created_at})</span>
+            </div>
+            <p class="text-sm text-slate-200">Note: <span class="italic text-emerald-300">"${t.handwritten_note}"</span></p>
+            <p class="text-xs text-amber-300">${t.escalation_reason}</p>
+            <p class="text-xs text-slate-400">SLA: ${t.sla_deadline} &bull; OCR Confidence: ${Math.round(t.confidence * 100)}%</p>
+          </div>
+
+          <div class="text-center">
+            <img src="${t.crop_url}" alt="Handwriting proof" class="h-16 w-44 object-cover rounded border border-slate-700" />
+            <span class="text-[10px] text-slate-400">Cropped Source Proof</span>
+          </div>
+
+          <div>${renderActionButtons(t)}</div>
+        </div>
+      `).join("");
+    }
+
+    // Loads raw SQLite tables into the Database Viewer tab
+    async function loadDatabase() {
+      const res = await fetch("/api/database");
+      const data = await res.json();
+
+      document.getElementById("history-row-count").textContent = `${data.history.length} rows`;
+      document.getElementById("tickets-row-count").textContent = `${data.tickets.length} rows`;
+
+      document.getElementById("db-history-body").innerHTML = data.history.map(h => `
+        <tr class="hover:bg-slate-800/40">
+          <td class="p-3 text-slate-400">${h.id}</td>
+          <td class="p-3 font-bold text-white">${h.asset_id}</td>
+          <td class="p-3 text-slate-300">${h.item_name}</td>
+          <td class="p-3 text-amber-300">${h.note}</td>
+          <td class="p-3 text-slate-400">${h.logged_date}</td>
+        </tr>
+      `).join("");
+
+      document.getElementById("db-tickets-body").innerHTML = data.tickets.length === 0
+        ? `<tr><td colspan="8" class="p-4 text-center text-slate-500">No rows in tickets table yet.</td></tr>`
+        : data.tickets.map(t => `
+          <tr class="hover:bg-slate-800/40">
+            <td class="p-3 text-slate-400">${t.id}</td>
+            <td class="p-3 font-bold text-white">${t.asset_id}</td>
+            <td class="p-3 text-slate-300">${t.item_name}</td>
+            <td class="p-3 font-bold text-red-400">${t.priority}</td>
+            <td class="p-3 font-bold text-emerald-400">${t.status}</td>
+            <td class="p-3 text-slate-300">${t.handwritten_note}</td>
+            <td class="p-3 text-amber-300">${t.escalation_reason}</td>
+            <td class="p-3 text-slate-400">${t.created_at}</td>
+          </tr>
+        `).join("");
+    }
+
+    async function resetDemo() {
+      await fetch("/api/reset-demo", { method: "POST" });
+      await loadDatabase();
+      await loadTickets();
+    }
+
+    loadTickets();
+  </script>
+</body>
+</html>

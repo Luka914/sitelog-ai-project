@@ -2,3 +2,6 @@
 .env
 .env*
 !.env.example
+static/crops
+__pycache__
+*.db
